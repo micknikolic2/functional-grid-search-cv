@@ -100,9 +100,12 @@ After refitting the best estimator on the entire dataset, the system:
 1. Fits both calibration models.  
 2. Computes the **Expected Calibration Error (ECE)** for each.
    The ECE is calculated as follows:
+   
 $$
 \text{ECE} = \frac{1}{M} \sum_{m=1}^{M} \left| \frac{|B_m|}{N} \left[ \text{acc}(B_m) - \text{conf}(B_m) \right] \right|
-$$ ,
+$$ 
+
+,
    where M is the number of bins, |B_m| is the number of observations in a bin, and N is the total number of observations. 
 4. Selects the calibration method with lower ECE. The acc(B_m) denotes the fraction of accurately classified observations in bin m. The conf(B_m) denotes the average maximum softmax probability for the chosen class.
 5. Stores:

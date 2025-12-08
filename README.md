@@ -1,7 +1,6 @@
 # **Functional Grid Search with Monads in Python**  
-*A Functional, Side-Effect-Free, and Monadic Reimplementation of Scikit-Learn’s GridSearchCV.
+A Functional, Side-Effect-Free, and Monadic Reimplementation of Scikit-Learn’s GridSearchCV.
 It comprises evaluation improvements such as model selection based on the 1 Std.error rule (model-agnostic) and probability calibration (classification models) that improves performance in production and combats the feature-level bias.
-*
 
 ---
 

@@ -1,6 +1,6 @@
 # **Functional Grid Search with Monads in Python**  
-A Functional, Side-Effect-Free, and Monadic Reimplementation of Scikit-Learn’s GridSearchCV.
-It comprises evaluation improvements such as model selection based on the 1 Std.error rule (model-agnostic) and probability calibration (classification models) that improves performance in production and combats the feature-level bias.
+A functional, side-effect free, and monadic reimplementation of scikit-learn’s GridSearchCV.
+It comprises two major improvements: (1) the best model selection is based on the 1 standard-error rule (model-agnostic), and (2) implemented probability calibration (concerning classification models) that improves performance in production (reducing the expected calibration error) and mitigates the feature-level bias. For more in-detail explanation of the one-standard-error rule and expected calibration error please check 2.5 and 2.6, respectively. 
 
 ---
 
@@ -30,7 +30,7 @@ The system produces reliable, reproducible results ideal for research environmen
 
 ### **2.1 Functional Design**
 
-All computational components are written as **side-effect-free functions**:
+All computational components are written as **side-effect free functions**:
 
 - No mutation of global state  
 - No silent exception propagation  
@@ -88,7 +88,7 @@ This 1-SE rule (commonly used in statistical learning such as CART and glmnet) f
 
 ---
 
-### **2.6 (New) Probability Calibration for Classification Models**
+### **2.6 Probability Calibration for Classification Models**
 
 For classification models supporting `predict_proba`, the system provides **optional probability calibration** using two established methods:
 
@@ -98,9 +98,14 @@ For classification models supporting `predict_proba`, the system provides **opti
 After refitting the best estimator on the entire dataset, the system:
 
 1. Fits both calibration models.  
-2. Computes the **Expected Calibration Error (ECE)** for each.  
-3. Selects the calibration method with lower ECE.  
-4. Stores:
+2. Computes the **Expected Calibration Error (ECE)** for each.
+   The ECE is calculated as follows:
+$$
+\text{ECE} = \frac{1}{M} \sum_{m=1}^{M} \left| \frac{|B_m|}{N} \left[ \text{acc}(B_m) - \text{conf}(B_m) \right] \right|
+$$ ,
+   where M is the number of bins, |B_m| is the number of observations in a bin, and N is the total number of observations. 
+4. Selects the calibration method with lower ECE. The acc(B_m) denotes the fraction of accurately classified observations in bin m. The conf(B_m) denotes the average maximum softmax probability for the chosen class.
+5. Stores:
    - `best_calibrated_estimator_`  
    - `calibration_results_` (ECE diagnostics)
 

@@ -1,4 +1,4 @@
-# **Functional Grid Search with Monads in Python**  
+# **Functional Grid Search Cross-Validation with Monads in Python**  
 A functional, side-effect free, and monadic reimplementation of scikit-learn’s GridSearchCV.
 It comprises two major improvements: (1) the best model selection is based on the 1 standard-error rule (model-agnostic), and (2) implemented probability calibration (concerning classification models) that improves performance in production (reducing the expected calibration error) and mitigates the feature-level bias. For more in-detail explanation of the one-standard-error rule and expected calibration error please check 2.5 and 2.6, respectively. 
 

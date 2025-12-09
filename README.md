@@ -132,41 +132,188 @@ The method producing lower ECE is selected, and the system stores:
 
 Calibration is activated with:
 
-```python
-calibrate=True```
+`calibrate=True`
 
 
-## **3. Summary of Outputs**
+## 3. Summary of Outputs
 
 After calling:
 
-```python
-search.fit(X, y)```
+search.fit(X, y)
 
-the system exposes several groups of outputs that capture estimator-level results and diagnostic information.
+the system exposes two categories of outputs:
+(1) estimator-level results and  
+(2) diagnostic structures describing model performance, calibration, and cross-validation behaviour.
 
-### **3.1 Estimator Outputs**
+---
 
-| Attribute                      | Description                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------- |
-| `best_params_`                 | Parameter set achieving the best mean cross-validation performance                      |
-| `best_estimator_`              | Estimator refitted on the entire dataset using the best parameter set                   |
-| `one_se_estimator_`            | Estimator selected using the one-standard-error rule and refitted on the entire dataset |
-| `best_calibrated_estimator_`   | Calibrated version of the best estimator (isotonic or sigmoid)                          |
-| `one_se_calibrated_estimator_` | Calibrated version of the 1-SE estimator                                                |
+### 3.1 Estimator Outputs
 
-### **3.2 Diagnostic Outputs**
+best_params_  
+The hyperparameter combination achieving the best mean cross-validation score.
 
-| Attribute                     | Description                                                                                        |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| `best_score_`                 | Mean cross-validation score for the best model according to the refit metric                       |
-| `best_index_`                 | Index of the best-performing parameter set in the parameter grid                                   |
-| `cv_results_`                 | Comprehensive cross-validation results, including per-fold metrics, means, and standard deviations |
-| `model_within_1se_`           | Summary of the selected 1-SE model, including its parameters and performance statistics            |
-| `calibration_results_`        | Calibration diagnostics for the best estimator, including per-method ECE                           |
-| `one_se_calibration_results_` | Calibration diagnostics for the 1-SE estimator                                                     |
+best_estimator_  
+The estimator refitted on the full dataset using best_params_.
 
-Diagnostic include: mean and std of cross-validated scores, pre-fold training and validation metrics, comparison between competing models, calibration error measurements (ECE) across isotonic and sigmoid methods.
+one_se_estimator_  
+The estimator chosen under the one-standard-error rule and refitted on the full dataset.
 
-These outputs enable rigorous model comparison, transparency in model selection, and evaluation of probabilistic reliability.
+best_calibrated_estimator_  
+The calibrated version of the best estimator (isotonic or sigmoid), selected by lowest Expected Calibration Error (ECE).
 
+one_se_calibrated_estimator_  
+The calibrated version of the one-standard-error estimator.
+
+---
+
+### 3.2 Diagnostic Outputs
+
+best_score_  
+The highest mean cross-validation score according to the refit metric.
+
+best_index_  
+The index of the best-performing parameter configuration.
+
+cv_results_  
+A comprehensive structure containing per-fold metrics, mean and standard deviation of scores, timing information, and parameter-level outputs.  
+The layout mirrors scikit-learn's GridSearchCV.
+
+model_within_1se_  
+A dictionary describing the estimator selected under the one-standard-error rule.
+
+calibration_results_  
+ECE diagnostics for the best estimator, comparing isotonic and sigmoid calibration.
+
+one_se_calibration_results_  
+ECE diagnostics for the one-standard-error estimator.
+
+---
+
+### Diagnostics Include
+
+- per-fold training and validation metrics  
+- mean and standard deviation of cross-validation scores  
+- fit and score time statistics  
+- ranking of models under the selected metric  
+- calibration error comparisons (ECE)  
+- complete information for reproducible model selection
+
+These outputs support transparent, rigorous evaluation suitable for research, teaching, and production ML pipelines.
+
+## 4. Implementation Overview
+
+The system is organized into modular components, each responsible for a single aspect of the grid search procedure. The implementation avoids mutation, relies on pure functions, and expresses all processing stages through explicit data transformations.
+
+### 4.1 Parameter Grid Expansion
+
+Parameter grids are expanded into explicit combinations using a deterministic product of values. Validation ensures that all entries follow scikit-learn conventions. The result is a sequence of dictionaries representing individual hyperparameter settings.
+
+### 4.2 Cross-Validation Strategy
+
+The fitting routine chooses between KFold and StratifiedKFold depending on whether the estimator reports a classifier type. For each parameter combination and each fold, a task is created containing all required computation inputs. These tasks form the basis for parallel evaluation.
+
+### 4.3 Parallel Evaluation
+
+Evaluation occurs through a functional wrapper over a process-based executor.  
+Key characteristics:
+
+- each task is pure and free of side effects  
+- inputs and outputs are serialized without shared state  
+- results propagate through monadic containers  
+- task failures are safely captured and reported  
+
+Parallel execution produces a collection of Result objects, which are filtered and aggregated.
+
+### 4.4 Metric Handling
+
+The scoring subsystem supports both:
+
+- single-metric evaluation  
+- multi-metric evaluation via a mapping of names to scorer functions  
+
+Cross-validation results record:
+
+- per-fold test metrics  
+- optional training metrics  
+- mean and standard deviation for each metric  
+- ranking of candidates  
+
+The structure mirrors scikit-learn’s cv_results_ conventions.
+
+### 4.5 Model Selection
+
+Two selection criteria are implemented:
+
+1. standard best-mean-score selection  
+2. the one-standard-error rule for selecting a simpler model with performance statistically indistinguishable from the best  
+
+This rule improves generalization and stabilizes the choice of hyperparameters in small or noisy datasets.
+
+### 4.6 Probability Calibration
+
+For estimators supporting predict_proba, optional probability calibration may be applied.  
+Calibration evaluates:
+
+- isotonic regression  
+- sigmoid (Platt scaling)  
+
+Expected Calibration Error (ECE) is computed on held-out folds, and the method with the lower ECE is retained. Diagnostics are stored for further inspection.
+
+---
+
+## 5. Example Usage
+
+The following illustrates a typical workflow:
+
+1. define an estimator  
+2. specify a parameter grid  
+3. define scoring  
+4. run the functional grid search  
+5. inspect both estimator and diagnostic outputs  
+
+The system can be used as a drop-in conceptual replacement for GridSearchCV while remaining transparent and suitable for research and experimentation.
+
+---
+
+## 6. Design Principles
+
+Several principles guided the construction of the framework:
+
+### 6.1 Functional Programming
+
+All major operations are expressed as pure functions whose outputs depend solely on inputs. This improves composability and supports clear reasoning about the behaviour of the system.
+
+### 6.2 Explicit Error Handling
+
+Validation failures, numerical issues, and task-level errors are wrapped in Result monads. This pattern avoids exception-driven control flow and ensures that failure modes remain explicit and inspectable.
+
+### 6.3 Deterministic Behaviour
+
+Parameter expansion, fold generation, scoring, and aggregation follow deterministic ordering. This ensures reproducibility and simplifies debugging.
+
+### 6.4 Transparency
+
+Unlike traditional black-box grid search, every component of the process is visible. Intermediate states may be interrogated, extended, or replaced for research-oriented modifications.
+
+---
+
+## 7. Applications
+
+This framework is intended for:
+
+- graduate-level machine learning coursework  
+- research experiments where transparency and control are necessary  
+- comparative studies of estimators and calibration methods  
+- environments requiring deterministic and interpretable model selection  
+- methodological investigations such as the study of bias, variance, calibration, or model complexity  
+
+The design also facilitates integration with:
+
+- probabilistic pipelines  
+- uncertainty-aware systems  
+- custom model selection rules  
+- functional data science workflows  
+
+---
+
+If integrated into production systems, calibrated outputs and conservative model selection criteria help mitigate overconfidence, reduce rare-event misclassification risk, and strengthen the reliability of downstream components.

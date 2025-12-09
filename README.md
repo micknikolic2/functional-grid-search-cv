@@ -112,16 +112,16 @@ Calibration is performed on cross-validated predictions of the refitted best est
 
 For each calibration method, Expected Calibration Error (ECE) is computed:
 
-\[
-\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|
-\]
+$$
+\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \, \Big| \text{acc}(B_m) - \text{conf}(B_m) \Big|
+$$
 
 where:
 
-- \( B_m \): calibration bin  
-- \( N \): total samples  
-- \( \text{acc}(B_m) \): empirical accuracy in bin  
-- \( \text{conf}(B_m) \): mean predicted confidence in bin  
+- \(B_m\): calibration bin  
+- \(N\): total samples  
+- \(\text{acc}(B_m)\): empirical accuracy in bin m  
+- \(\text{conf}(B_m)\): mean predicted confidence in bin m   
 
 The method producing lower ECE is selected, and the system stores:
 

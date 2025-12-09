@@ -1,28 +1,32 @@
 # **Functional Grid Search Cross-Validation**  
-A functional, side-effect free, and monadic reimplementation of scikit-learn’s GridSearchCV.
-It comprises two major improvements: (1) the best model selection is based on the 1 standard-error rule (model-agnostic), and (2) implemented probability calibration (concerning classification models) that improves performance in production (reducing the expected calibration error) and mitigates the feature-level bias. For more in-detail explanation of the one-standard-error rule and expected calibration error please check 2.5 and 2.6, respectively. 
+A functional, side-effect free, and monadic reimplementation of scikit-learn’s `GridSearchCV`.  
+It comprises two major improvements:  
+(1) model selection using the **one-standard-error rule**, and  
+(2) optional **probability calibration** to reduce Expected Calibration Error (ECE) and mitigate feature-level bias.  
+
+For detailed explanations of the one-standard-error rule and calibration, see Sections **2.5** and **2.6**.
 
 ---
 
 ## **1. Introduction**
 
-Hyperparameter optimization is a central component of machine learning model development.  
-While tools such as *Scikit-Learn’s* `GridSearchCV` provide robust functionality, they rely on:
+Hyperparameter optimization is central to machine learning model development.  
+While tools such as Scikit-Learn’s `GridSearchCV` provide powerful functionality, they rely on:
 
-- mutation and shared state,
-- implicit exception-based error handling,
-- object-oriented design tightly coupled to estimator interfaces,
-- limited opportunities for functional composition and reasoning.
+- mutation and shared state  
+- exception-based control flow  
+- tightly coupled object-oriented design  
+- limited opportunities for functional composition  
 
-This project presents a **functional and monadic reimplementation** of Grid Search, inspired by:
+This project presents a **functional and monadic reimplementation** of grid search, emphasizing:
 
-- functional programming principles  
+- purity and referential transparency  
 - explicit monadic error propagation  
 - deterministic parallel execution  
-- transparent model selection criteria  
-- optional post-hoc **probability calibration** based on Expected Calibration Error (ECE)
+- statistically grounded model selection  
+- optional probability calibration  
 
-The system produces reliable, reproducible results ideal for research environments, graduate-level education, and experimental ML system design.
+The result is a reproducible, transparent, and mathematically principled system suitable for research, graduate coursework, and production-grade experimentation.
 
 ---
 
@@ -30,96 +34,139 @@ The system produces reliable, reproducible results ideal for research environmen
 
 ### **2.1 Functional Design**
 
-All computational components are written as **side-effect free functions**:
+All computational components are implemented as **side-effect-free functions**:
 
-- No mutation of global state  
-- No silent exception propagation  
-- Pure transformation pipelines  
+- no global state  
+- no silent mutations  
+- no hidden exception propagation  
 
-This improves transparency, composability, and testability.
+This ensures:
+
+- predictable behavior  
+- better composability  
+- straightforward unit testing  
 
 ---
 
-### **2.2 Monads for Error Handling**
+### **2.2 Monadic Error Handling**
 
-Two monads form the backbone of the pipeline:
+Two monads provide explicit control flow and safe computation:
 
-#### `Maybe[T]`
-Represents optional values (Some or Nothing).  
+#### **Maybe[T]**
+Encodes optional values (`Some`, `Nothing`).
 
-#### `Result[T, E]`
-Represents success (`Ok`) or failure (`Err`) as explicit computational states.
+#### **Result[T, E]**
+Encodes computational outcomes (`Ok(value)` or `Err(error)`).
 
-These abstractions eliminate the need for exception-driven control flow and promote safe composition of steps.
+These monads eliminate the need for exception-based logic and enable explicit, type-safe computation chains.
 
 ---
 
 ### **2.3 Validation Layer**
 
-The validation subsystem ensures correctness before computation:
+Every computational step begins with validation:
 
 - estimator interface validation  
-- feature / label array validation  
-- parallelism configuration (`n_jobs`)  
+- feature/label array validation  
+- cross-validation and parallelism configuration  
 
-Every validation result is wrapped in a `Result` monad.
+Results are always returned as `Result` monads, ensuring safe propagation of errors through the pipeline.
 
 ---
 
 ### **2.4 Parallel Execution**
 
-Parallel evaluation of model/parameter/fold combinations is implemented via:
+Parallelization is implemented through:
 
 - `ProcessPoolExecutor`  
-- deterministic result aggregation  
-- monadic wrapping of all task outcomes  
+- deterministic task assignment  
+- monadic wrapping of all task outputs  
 
-Parallelism is clean, safe, and compositional.
+Parallelism is designed to be explicit, predictable, and reproducible.
 
 ---
 
-### **2.5 Model Selection with the One-Standard-Error Rule**
+### **2.5 Model Selection Using the One-Standard-Error Rule**
 
-Beyond selecting the best parameter set, the system identifies:
+Rather than selecting only the parameter set with the highest mean cross-validation score, this system applies the **one-standard-error rule**:
 
-> **The least complex model whose performance lies within one standard error of the best score.**
+> Select the *least complex* model whose mean CV score lies within one standard error of the best model.
 
-This 1-SE rule (commonly used in statistical learning such as CART and glmnet) favors parsimonious models and reduces overfitting tendencies.
+This yields two estimators:
+
+1. **`best_estimator_`** — highest mean performance  
+2. **`one_se_estimator_`** — simpler model with comparable performance  
+
+This principle, used in CART, glmnet, and classical statistical learning, produces models that generalize better and are less likely to overfit.
 
 ---
 
 ### **2.6 Probability Calibration for Classification Models**
 
-For classification models supporting `predict_proba`, the system provides **optional probability calibration** using two established methods:
+If the estimator supports `predict_proba`, the system can optionally apply **post-hoc calibration** using:
 
-- **Isotonic Regression** (`method="isotonic"`)  
-- **Platt Scaling** (`method="sigmoid"`)  
+- **Isotonic Regression**  
+- **Platt Scaling (sigmoid)**  
 
-After refitting the best estimator on the entire dataset, the system:
+Calibration is performed on cross-validated predictions of the refitted best estimator.
 
-1. Fits both calibration models.  
-2. Computes the **Expected Calibration Error (ECE)** for each.
-   The ECE is calculated as follows:
-   
-$$
-\text{ECE} = \frac{1}{M} \sum_{m=1}^{M} \left| \frac{|B_m|}{N} \left[ \text{acc}(B_m) - \text{conf}(B_m) \right] \right|
-$$ 
+For each calibration method, Expected Calibration Error (ECE) is computed:
 
-,
-   where M is the number of bins, |B_m| is the number of observations in a bin, and N is the total number of observations. 
-4. Selects the calibration method with lower ECE. The acc(B_m) denotes the fraction of accurately classified observations in bin m. The conf(B_m) denotes the average maximum softmax probability for the chosen class.
-5. Stores:
-   - `best_calibrated_estimator_`  
-   - `calibration_results_` (ECE diagnostics)
+\[
+\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|
+\]
 
-This produces probabilistically reliable predictions crucial for:
+where:
 
-- risk-sensitive applications  
-- medical decision support  
-- uncertainty modeling  
-- calibrated inference pipelines  
+- \( B_m \): calibration bin  
+- \( N \): total samples  
+- \( \text{acc}(B_m) \): empirical accuracy in bin  
+- \( \text{conf}(B_m) \): mean predicted confidence in bin  
 
-Calibration is controlled via:
+The method producing lower ECE is selected, and the system stores:
+
+- `best_calibrated_estimator_`  
+- `calibration_results_`  
+- `one_se_calibrated_estimator_`  
+- `one_se_calibration_results_`  
+
+Calibration is activated with:
 
 ```python
 calibrate=True
+
+
+## **3. Summary of Outputs**
+
+After calling:
+
+```python
+search.fit(X, y)
+
+the system exposes several groups of outputs that capture estimator-level results and diagnostic information.
+
+### **3.1 Estimator Outputs**
+
+| Attribute                      | Description                                                                             |
+| ------------------------------ | --------------------------------------------------------------------------------------- |
+| `best_params_`                 | Parameter set achieving the best mean cross-validation performance                      |
+| `best_estimator_`              | Estimator refitted on the entire dataset using the best parameter set                   |
+| `one_se_estimator_`            | Estimator selected using the one-standard-error rule and refitted on the entire dataset |
+| `best_calibrated_estimator_`   | Calibrated version of the best estimator (isotonic or sigmoid)                          |
+| `one_se_calibrated_estimator_` | Calibrated version of the 1-SE estimator                                                |
+
+### **3.2 Diagnostic Outputs**
+
+| Attribute                     | Description                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `best_score_`                 | Mean cross-validation score for the best model according to the refit metric                       |
+| `best_index_`                 | Index of the best-performing parameter set in the parameter grid                                   |
+| `cv_results_`                 | Comprehensive cross-validation results, including per-fold metrics, means, and standard deviations |
+| `model_within_1se_`           | Summary of the selected 1-SE model, including its parameters and performance statistics            |
+| `calibration_results_`        | Calibration diagnostics for the best estimator, including per-method ECE                           |
+| `one_se_calibration_results_` | Calibration diagnostics for the 1-SE estimator                                                     |
+
+Diagnostic include: mean and std of cross-validated scores, pre-fold training and validation metrics, comparison between competing models, calibration error measurements (ECE) across isotonic and sigmoid methods.
+
+These outputs enable rigorous model comparison, transparency in model selection, and evaluation of probabilistic reliability.
+

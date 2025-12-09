@@ -133,7 +133,7 @@ The method producing lower ECE is selected, and the system stores:
 Calibration is activated with:
 
 ```python
-calibrate=True
+calibrate=True```
 
 
 ## **3. Summary of Outputs**
@@ -141,7 +141,7 @@ calibrate=True
 After calling:
 
 ```python
-search.fit(X, y)
+search.fit(X, y)```
 
 the system exposes several groups of outputs that capture estimator-level results and diagnostic information.
 

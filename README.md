@@ -120,8 +120,8 @@ where:
 
 - \(B_m\): calibration bin  
 - \(N\): total samples  
-- \(\text{acc}(B_m)\): empirical accuracy in bin m  
-- \(\text{conf}(B_m)\): mean predicted confidence in bin m   
+- \acc_(B_m)\): empirical accuracy in bin m  
+- \conf_(B_m)\): mean predicted confidence in bin m 
 
 The method producing lower ECE is selected, and the system stores:
 

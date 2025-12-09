@@ -1,14 +1,17 @@
 # Import libraries, modules, and methods
 
-from typing import Any, Dict, Optional, Callable
+from typing import Union, Any, Dict, Optional, Callable
+import numpy as np
 from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import KFold, StratifiedKFold
 from monads.result import Result
 from .grid import expand_param_grid
-from validation import validate_estimator, validate_data
+from validation.estimator import validate_estimator
+from validation.data import validate_data
 from utils.parallel import run_parallel
-from model_selection.fit_and_score import fit_and_score_fn
-from model_selection.complexity import select_least_complex_within_1se
+from .fit_and_score import fit_and_score_fn
+from .complexity import select_least_complex_within_1se
+from .aggregate import aggregate_cv_results
 
 
 class FunctionalGridSearch:
@@ -16,58 +19,30 @@ class FunctionalGridSearch:
     A functional and monadic reimplementation of scikit-learn's GridSearchCV.
 
     This class performs hyperparameter search using a fully functional pipeline
-    with explicit error-handling through `Result` objects and parallel execution
-    via `run_parallel`.
+    with explicit error-handling through Result objects and parallel execution
+    via run_parallel.
 
     Unlike traditional GridSearchCV, this implementation:
-        - avoids mutation and side effects,
-        - uses explicit validation steps (`validate_estimator`, `validate_data`),
-        - represents errors using monads instead of exceptions,
+        - avoids mutation and hidden side effects,
+        - uses explicit validation steps (validate_estimator, validate_data),
+        - represents errors using monads instead of exceptions at lower levels,
         - returns structured cross-validation results,
         - supports selection of the least-complex model within 1 standard error
-          (`select_least_complex_within_1se`).
-
-    Parameters:
-        estimator : BaseEstimator
-            The base estimator to fit during grid search.
-
-        param_grid : Dict[str, list]
-            Dictionary specifying parameter names (`str`) mapped to lists of values.
-
-        scoring : callable, optional
-            A scoring function with signature `(estimator, X_test, y_test) -> float`.
-
-        cv : int, default=5
-            Number of cross-validation folds.
-
-        n_jobs : int, default=-1
-            Number of parallel workers. -1 means use all available CPU cores.
-
-        return_train_score : bool, default=False
-            Whether to store training scores in the results.
-
-        refit : bool, default=True
-            Whether to refit the estimator using the best parameters on the full data.
-
-        calibrate : bool, default=False
-            If True and the estimator is a classifier supporting predict_proba,
-            the selected best estimator will undergo probability calibration using
-            isotonic regression and Platt scaling. The method with lower Expected
-            Calibration Error (ECE) is retained.
-
-        verbose : int, default=0
-            Verbosity level. Currently not used but reserved for logging.
+          (select_least_complex_within_1se),
+        - optionally calibrates probabilistic classifiers,
+        - exposes both the best model and a 1-SE model, in calibrated and
+          uncalibrated form.
     """
 
     def __init__(
         self,
         estimator: BaseEstimator,
         param_grid: Dict[str, list],
-        scoring: Optional[Callable] = None,
+        scoring: Optional[Union[Callable, Dict[str, Callable]]] = None,
         cv: int = 5,
         n_jobs: int = -1,
         return_train_score: bool = False,
-        refit: bool = True,
+        refit: Union[bool, str] = True,
         calibrate: bool = False,
         verbose: int = 0,
     ):
@@ -81,48 +56,43 @@ class FunctionalGridSearch:
         self.calibrate = calibrate
         self.verbose = verbose
 
-        self.best_estimator_ = None
-        self.best_score_ = None
-        self.best_params_ = None
-        self.cv_results_ = []
-        self.model_within_1se_ = None
-        self.best_calibrated_estimator_ = None
-        self.calibration_results_ = None
+        self.best_estimator_: Optional[BaseEstimator] = None
+        self.best_score_: Optional[float] = None
+        self.best_params_: Optional[Dict[str, Any]] = None
+        self.best_index_: Optional[int] = None
+
+        self.cv_results_: Optional[Dict[str, Any]] = None
+
+        self.model_within_1se_: Optional[Dict[str, Any]] = None
+        self.one_se_estimator_: Optional[BaseEstimator] = None
+
+        self.best_calibrated_estimator_: Optional[BaseEstimator] = None
+        self.calibration_results_: Optional[Dict[str, Any]] = None
+
+        self.one_se_calibrated_estimator_: Optional[BaseEstimator] = None
+        self.one_se_calibration_results_: Optional[Dict[str, Any]] = None
 
     def fit(self, X, y):
         """
-        Runs the functional grid search on the provided data.
+        Run the functional grid search on the provided data.
 
-        This method performs the following steps:
+        The procedure:
             1. Validate estimator and data using monadic validators.
             2. Expand the parameter grid into explicit combinations.
-            3. Select either KFold or StratifiedKFold depending on estimator type.
+            3. Select KFold or StratifiedKFold depending on estimator type.
             4. Create tasks for every (parameter_set × fold).
-            5. Run tasks in parallel using `run_parallel`.
-            6. Aggregate valid results from successful computations.
-            7. Identify the best parameter set based on test score.
-            8. Optionally refit the estimator with the best parameters.
-            9. Select a simpler model within one standard error (1SE rule).
-
-        Parameters:
-            X : array-like
-                Feature matrix.
-
-            y : array-like
-                Target array.
+            5. Execute tasks in parallel using run_parallel.
+            6. Aggregate successful results into cv_results_.
+            7. Identify the best parameter set using the chosen refit metric.
+            8. Optionally refit the estimator on the full data.
+            9. Select a simpler model within one standard error (1-SE rule)
+               based on cv_results_.
+           10. Optionally perform probability calibration for both the best
+               and 1-SE estimators.
 
         Returns:
-            self : FunctionalGridSearch
+            FunctionalGridSearch
                 The fitted grid search instance.
-
-        Raises:
-            ValueError
-                If estimator or data validation fails.
-                If parameter grid expansion fails.
-                If parameter grid is empty.
-
-            RuntimeError
-                If parallel execution fails.
         """
         val_est = validate_estimator(self.estimator)
         if val_est.is_err():
@@ -151,93 +121,144 @@ class FunctionalGridSearch:
             for split_idx, (train_idx, test_idx) in enumerate(splitter.split(X, y)):
                 X_train, y_train = X[train_idx], y[train_idx]
                 X_test, y_test = X[test_idx], y[test_idx]
-                tasks.append((
-                    self.estimator,
-                    X_train,
-                    y_train,
-                    X_test,
-                    y_test,
-                    param_set,
-                    self.scoring,
-                    self.return_train_score,
-                    split_idx,
-                    cand_idx,
-                ))
+                tasks.append(
+                    (
+                        self.estimator,
+                        X_train,
+                        y_train,
+                        X_test,
+                        y_test,
+                        param_set,
+                        self.scoring,
+                        self.return_train_score,
+                        split_idx,
+                        cand_idx,
+                    )
+                )
 
         parallel_res = run_parallel(tasks, fit_and_score_fn, n_jobs=self.n_jobs)
         if parallel_res.is_err():
             raise RuntimeError(parallel_res.error())
 
         raw_results = parallel_res.unwrap()
-
         scored_results = [r.unwrap() for r in raw_results if r.is_ok()]
-        self.cv_results_ = scored_results
+        if not scored_results:
+            raise RuntimeError("No successful results from parallel execution.")
 
-        best = max(scored_results, key=lambda r: r["test_score"])
-        self.best_params_ = best["params"]
-        self.best_score_ = best["test_score"]
+        self.cv_results_ = aggregate_cv_results(
+            scored_results,
+            scoring=self.scoring,
+            return_train_score=self.return_train_score,
+        )
+
+        if isinstance(self.scoring, dict):
+            if not isinstance(self.refit, str):
+                raise ValueError(
+                    "When scoring is a dict, refit must be the metric name (string)."
+                )
+            refit_metric_key = f"mean_test_{self.refit}"
+        else:
+            refit_metric_key = "mean_test_score"
+
+        if refit_metric_key not in self.cv_results_:
+            raise ValueError(
+                f"Refit metric '{refit_metric_key}' not found in cv_results_. "
+                f"Available keys: {list(self.cv_results_.keys())}"
+            )
+
+        scores = self.cv_results_[refit_metric_key]
+        best_index = int(np.argmax(scores))
+
+        self.best_index_ = best_index
+        self.best_params_ = self.cv_results_["params"][best_index]
+        self.best_score_ = float(scores[best_index])
 
         if self.refit:
             self.best_estimator_ = clone(self.estimator).set_params(**self.best_params_)
             self.best_estimator_.fit(X, y)
-        
+
+        if isinstance(self.scoring, dict):
+            metric_for_1se = self.refit if isinstance(self.refit, str) else list(self.scoring.keys())[0]
+        else:
+            metric_for_1se = "score"
+
+        self.model_within_1se_ = select_least_complex_within_1se(
+            self.cv_results_,
+            metric=metric_for_1se,
+        )
+
+        self.one_se_estimator_ = None
+        if self.model_within_1se_ is not None:
+            params_1se = self.model_within_1se_["params"]
+            self.one_se_estimator_ = clone(self.estimator).set_params(**params_1se)
+            self.one_se_estimator_.fit(X, y)
+
+        self.best_calibrated_estimator_ = None
+        self.calibration_results_ = None
+        self.one_se_calibrated_estimator_ = None
+        self.one_se_calibration_results_ = None
+
         if self.calibrate:
-            if hasattr(self.best_estimator_, "predict_proba"):
+            if self.best_estimator_ is not None and hasattr(self.best_estimator_, "predict_proba"):
                 from .calibration import calibrate_classifier
 
-                calib_result = calibrate_classifier(
+                calib_best = calibrate_classifier(
                     base_estimator=self.best_estimator_,
                     X=X,
                     y=y,
-                    cv=self.cv
+                    cv=self.cv,
                 )
+                self.best_calibrated_estimator_ = calib_best["best_model"]
+                self.calibration_results_ = calib_best
+            elif self.verbose:
+                print("Calibration of best estimator skipped: estimator does not support predict_proba.")
 
-                self.best_calibrated_estimator_ = calib_result["best_model"]
-                self.calibration_results_ = calib_result
+            if self.one_se_estimator_ is not None and hasattr(self.one_se_estimator_, "predict_proba"):
+                from .calibration import calibrate_classifier
 
-            else:
-                if self.verbose:
-                    print("Calibration skipped: estimator does not support predict_proba.")
+                calib_1se = calibrate_classifier(
+                    base_estimator=self.one_se_estimator_,
+                    X=X,
+                    y=y,
+                    cv=self.cv,
+                )
+                self.one_se_calibrated_estimator_ = calib_1se["best_model"]
+                self.one_se_calibration_results_ = calib_1se
+            elif self.one_se_estimator_ is not None and self.verbose:
+                print("Calibration of 1-SE estimator skipped: estimator does not support predict_proba.")
 
-        self.model_within_1se_ = select_least_complex_within_1se(scored_results)
         return self
 
-    
     def get_params(self):
         """
         Return key results of the grid search, including optional calibration
-        information for classification models.
+        information and 1-SE selection summary.
 
         Returns:
             dict
                 Dictionary containing:
                     - "best_params_" : dict
-                        Best hyperparameters based on cross-validation score.
-
                     - "best_score_" : float
-                        The highest cross-validation score.
-
+                    - "best_index_" : int
+                    - "cv_results_" : dict
                     - "model_within_1se_" : dict or None
-                        The least-complex model within 1 standard error of the best model.
-
+                    - "best_estimator_" : estimator or None
+                    - "one_se_estimator_" : estimator or None
                     - "best_calibrated_estimator_" : estimator or None
-                        The calibrated estimator chosen between isotonic and sigmoid
-                        calibration methods based on Expected Calibration Error (ECE).
-                        None if calibration was not enabled or not applicable.
-
                     - "calibration_results_" : dict or None
-                        Detailed calibration diagnostics including:
-                            - best_method
-                            - best_ece
-                            - isotonic_ece
-                            - sigmoid_ece
-
-                        None if calibration was not performed.
+                    - "one_se_calibrated_estimator_" : estimator or None
+                    - "one_se_calibration_results_" : dict or None
         """
         return {
             "best_params_": self.best_params_,
             "best_score_": self.best_score_,
+            "best_index_": self.best_index_,
+            "cv_results_": self.cv_results_,
             "model_within_1se_": self.model_within_1se_,
+            "best_estimator_": self.best_estimator_,
+            "one_se_estimator_": self.one_se_estimator_,
             "best_calibrated_estimator_": self.best_calibrated_estimator_,
             "calibration_results_": self.calibration_results_,
+            "one_se_calibrated_estimator_": self.one_se_calibrated_estimator_,
+            "one_se_calibration_results_": self.one_se_calibration_results_,
         }

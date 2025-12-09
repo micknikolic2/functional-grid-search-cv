@@ -1,29 +1,17 @@
 # Import libraries, modules, and methods
 
-from time import time
 from typing import Any, Callable, Dict, Optional
-from sklearn.base import clone
-from sklearn.metrics import get_scorer
-from monads.result import Result
+import numpy as np
+
 
 def default_model_complexity(params: Dict[str, Any]) -> float:
     """
     Default heuristic for estimating model complexity.
 
-    This function assigns a complexity score based on parameter values:
-        - Numerical parameters: higher absolute value → more complex
-        - Non-numerical parameters: contribute a fixed complexity of 1
+    Numerical parameters contribute by absolute magnitude.
+    Non-numerical parameters contribute a fixed value of 1.
 
-    This is used to select simpler models when scores are statistically tied
-    (e.g., the 1-standard-error rule).
-
-    Parameters:
-        params : dict
-            Dictionary of hyperparameter names to values.
-
-    Returns:
-        float
-            A scalar representing model complexity (lower is better).
+    Lower scores correspond to simpler models.
     """
     score = 0
     for k, v in params.items():
@@ -35,51 +23,75 @@ def default_model_complexity(params: Dict[str, Any]) -> float:
 
 
 def select_least_complex_within_1se(
-    results: list,
-    key: str = "test_score",
+    cv_results: Dict[str, Any],
+    metric: str = "score",
     complexity_fn: Callable[[Dict[str, Any]], float] = default_model_complexity
 ) -> Optional[Dict[str, Any]]:
     """
-    Select the least complex model within one standard error (1-SE rule).
+    Select the least complex model within one standard error of the best score.
 
-    The 1-SE rule is widely used in statistical learning (e.g., glmnet, CART, 
-    model selection theory). Instead of selecting the single best-scoring model,
-    the rule prefers a simpler model whose performance is within one standard 
-    deviation of the best score.
-
-    Steps performed:
-        1. Compute mean and standard deviation of all scores.
-        2. Determine threshold = best_score - std_dev.
-        3. Filter models with score >= threshold.
-        4. Among these "statistically tied" models, select the least complex one.
+    The procedure follows the 1-SE rule from statistical learning:
+        1. Identify the best-scoring model using ``mean_test_<metric>``.
+        2. Compute one-standard-error threshold:
+               threshold = best_score - std_of_best_model
+        3. Identify all models whose mean score is >= threshold.
+        4. Among these, return the model with the lowest complexity
+           as defined by ``complexity_fn``.
 
     Parameters:
-        results : list of dict
-            Cross-validation results where each dict contains:
-                - model parameters under "params"
-                - the metric score under `key`
+        cv_results : dict
+            Sklearn-compatible cv_results_ dictionary.
 
-        key : str, default="test_score"
-            The key in each result entry representing the model's performance score.
+        metric : str
+            Name of the metric used for refitting (e.g. "score", "f1", "accuracy").
 
-        complexity_fn : callable, default=default_model_complexity
-            A function mapping a parameter dictionary to a numeric complexity score.
-            Lower values indicate simpler models.
+        complexity_fn : callable
+            Function mapping ``params`` dict → numeric complexity value.
 
     Returns:
         dict or None
-            The selected result dictionary representing the least complex model
-            within 1 standard error. Returns None if no eligible models exist.
+            Dictionary containing:
+                - params
+                - mean_test_<metric>
+                - index
+                - complexity
+            or None if selection cannot be performed.
     """
-    import numpy as np
 
-    scores = [r[key] for r in results]
-    mean_score = np.mean(scores)
-    std_score = np.std(scores)
-    threshold = max(scores) - std_score
+    key_mean = f"mean_test_{metric}"
+    key_std = f"std_test_{metric}"
 
-    eligible = [r for r in results if r[key] >= threshold]
+    if key_mean not in cv_results or key_std not in cv_results:
+        return None
+
+    means = cv_results[key_mean]
+    stds = cv_results[key_std]
+    params_list = cv_results["params"]
+
+    best_index = int(np.argmax(means))
+    best_mean = means[best_index]
+    best_std = stds[best_index]
+
+    threshold = best_mean - best_std
+
+    eligible = []
+    for i, (mean_val, params) in enumerate(zip(means, params_list)):
+        if mean_val >= threshold:
+            eligible.append((i, params, mean_val))
+
     if not eligible:
         return None
 
-    return min(eligible, key=lambda r: complexity_fn(r["params"]))
+    selected = min(
+        eligible,
+        key=lambda tup: complexity_fn(tup[1])
+    )
+
+    idx, params_sel, mean_sel = selected
+
+    return {
+        "index": idx,
+        "params": params_sel,
+        "mean_score": mean_sel,
+        "complexity": complexity_fn(params_sel),
+    }

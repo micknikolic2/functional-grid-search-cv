@@ -11,8 +11,10 @@ def is_valid_param_grid(param_grid: Union[Mapping, Iterable]) -> bool:
     """
     if not isinstance(param_grid, (Mapping, Iterable)):
         return False
+
     if isinstance(param_grid, Mapping):
         param_grid = [param_grid]
+
     for grid in param_grid:
         if not isinstance(grid, Mapping):
             return False
@@ -21,22 +23,36 @@ def is_valid_param_grid(param_grid: Union[Mapping, Iterable]) -> bool:
                 return False
             if len(value) == 0:
                 return False
+
     return True
 
 
-def expand_param_grid(param_grid: Union[Mapping[str, Sequence], Sequence[Mapping[str, Sequence]]]) -> Result[Sequence[dict], str]:
+def expand_param_grid(
+    param_grid: Union[Mapping[str, Sequence], Sequence[Mapping[str, Sequence]]]
+) -> Result[Sequence[dict], str]:
     """
-    Expand a parameter grid into all possible combinations.
+    Expand a parameter grid into all possible combinations, respecting the
+    original ordering of parameter keys.
+
+    Unlike naive implementations, parameter keys are not sorted. They retain
+    the exact order provided by the user, which matches scikit-learn’s
+    `ParameterGrid` behavior and yields deterministic parameter sequences.
     """
     if not is_valid_param_grid(param_grid):
-        return Result.Err("Invalid parameter grid: must be dict or list of dicts with non-empty iterable values.")
+        return Result.Err(
+            "Invalid parameter grid: must be dict or list of dicts with non-empty iterable values."
+        )
 
     if isinstance(param_grid, Mapping):
         param_grid = [param_grid]
 
     result = []
+
     for grid in param_grid:
-        keys, values = zip(*sorted(grid.items()))
+        keys = list(grid.keys())          # order preserved
+        values = [grid[k] for k in keys]  # aligned with original order
         for combination in product(*values):
-            result.append(dict(zip(keys, combination)))
+            params = dict(zip(keys, combination))
+            result.append(params)
+
     return Result.Ok(result)

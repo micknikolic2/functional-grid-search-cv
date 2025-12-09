@@ -1,7 +1,7 @@
 # Import libraries, modules, and methods
 
 from time import time
-from typing import Any, Callable, Dict, Optional
+from typing import Union, Any, Callable, Dict, Optional
 from sklearn.base import clone
 from sklearn.metrics import get_scorer
 from monads.result import Result
@@ -14,71 +14,43 @@ def fit_and_score_fn(
     X_test: Any,
     y_test: Any,
     parameters: Dict[str, Any],
-    scorer: Optional[Callable] = None,
+    scorer: Optional[Union[str, Callable, Dict[str, Callable]]] = None,
     return_train_score: bool = False,
     split_index: Optional[int] = None,
     candidate_index: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Functional, side-effect-free replacement for scikit-learn's `_fit_and_score`.
+    Functional replacement for sklearn._fit_and_score with full multi-metric support.
 
-    This function:
+    The function:
         - clones the estimator,
-        - sets its parameters,
-        - fits it on the training fold,
-        - evaluates it on the test fold,
-        - optionally evaluates on the training fold,
+        - sets parameters,
+        - fits on the training fold,
+        - computes test and optionally train scores,
         - measures fit and score time,
-        - returns a dictionary of all results.
+        - returns a dictionary compatible with downstream aggregation.
 
-    No mutation occurs to the original estimator. This is suitable for use in
-    parallel, functional, or monadic pipelines.
+    It supports:
+        - default estimator scoring,
+        - single custom scoring callable,
+        - dict of scoring callables for multi-metric evaluation.
 
-    Parameters:
-        estimator : Any
-            Base estimator implementing `.fit` and `.score` or a custom scoring function.
-
-        X_train : array-like
-            Training features.
-
-        y_train : array-like
-            Training labels.
-
-        X_test : array-like
-            Test features.
-
-        y_test : array-like
-            Test labels.
-
-        parameters : dict
-            Hyperparameters to apply to the cloned estimator via `.set_params()`.
-
-        scorer : callable, optional
-            Custom scoring function with signature `(estimator, X, y) -> float`.
-            If None, uses the estimator's `.score()` method.
-
-        return_train_score : bool, default=False
-            Whether to compute and include the training-fold score.
-
-        split_index : int, optional
-            Index of the cross-validation fold.
-
-        candidate_index : int, optional
-            Index of the parameter combination.
+    Parameters follow the scikit-learn conventions but without mutation.
 
     Returns:
         dict
-            A dictionary containing:
-                - "params": hyperparameter dict
-                - "split_index": fold index  
-                - "candidate_index": parameter-set index  
-                - "fit_time": seconds spent fitting  
-                - "score_time": seconds spent scoring on test set  
-                - "test_score": score on test fold  
-                - "train_score": score on train fold (if enabled)
+            Keys include:
+                - params
+                - split_index
+                - candidate_index
+                - fit_time
+                - score_time
+                - test_score / train_score (single metric)
+                - test_<metric> / train_<metric> (multi-metric)
     """
     est = clone(estimator).set_params(**parameters)
-    result = {
+
+    result: Dict[str, Any] = {
         "params": parameters,
         "split_index": split_index,
         "candidate_index": candidate_index,
@@ -86,17 +58,44 @@ def fit_and_score_fn(
 
     fit_start = time()
     est.fit(X_train, y_train)
-    fit_time = time() - fit_start
-    result["fit_time"] = fit_time
+    result["fit_time"] = time() - fit_start
 
     score_start = time()
-    score_fn = scorer or est.score
-    test_score = score_fn(est, X_test, y_test)
-    score_time = time() - score_start
-    result["score_time"] = score_time
-    result["test_score"] = test_score
 
-    if return_train_score:
-        result["train_score"] = score_fn(est, X_train, y_train)
+    if scorer is None:
+        val_test = est.score(X_test, y_test)
+        result["test_score"] = val_test
+
+        if return_train_score:
+            val_train = est.score(X_train, y_train)
+            result["train_score"] = val_train
+
+    elif isinstance(scorer, dict):
+        for name, fn in scorer.items():
+            val_test = fn(est, X_test, y_test)
+            result[f"test_{name}"] = val_test
+
+            if return_train_score:
+                val_train = fn(est, X_train, y_train)
+                result[f"train_{name}"] = val_train
+
+    elif isinstance(scorer, str):
+        scorer_fn = get_scorer(scorer)
+        val_test = scorer_fn(est, X_test, y_test)
+        result["test_score"] = val_test
+
+        if return_train_score:
+            val_train = scorer_fn(est, X_train, y_train)
+            result["train_score"] = val_train
+
+    else:
+        val_test = scorer(est, X_test, y_test)
+        result["test_score"] = val_test
+
+        if return_train_score:
+            val_train = scorer(est, X_train, y_train)
+            result["train_score"] = val_train
+
+    result["score_time"] = time() - score_start
 
     return result

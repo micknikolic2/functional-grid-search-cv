@@ -1,3 +1,25 @@
+"""
+Functional grid search implementation.
+
+This module provides:
+    - FunctionalGridSearch: a functional, side-effect-free, monadic
+      reimplementation of scikit-learn’s GridSearchCV
+
+The implementation decomposes grid search into explicit functional stages:
+parameter grid expansion, estimator and data validation, fold construction,
+parallel execution of fold-level computations, aggregation of cross-validation
+results, best-model selection, and 1-SE model selection. All lower-level
+operations return explicit Result objects rather than raising exceptions,
+ensuring transparent error handling.
+
+The class also supports optional probability calibration for probabilistic
+classifiers and exposes both the best estimator and the 1-SE estimator in
+calibrated and uncalibrated form. The resulting workflow is deterministic,
+fully inspectable, and suitable for research-oriented and pedagogical uses
+where clarity and composability are essential.
+"""
+
+
 # Import libraries, modules, and methods
 
 from typing import Union, Any, Dict, Optional, Callable

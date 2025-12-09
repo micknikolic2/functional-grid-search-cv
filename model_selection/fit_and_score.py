@@ -1,3 +1,21 @@
+"""
+Fold-level model fitting and scoring utilities.
+
+This module provides:
+    - fit_and_score_fn: a functional replacement for scikit-learn’s internal
+      ``_fit_and_score`` routine, supporting single and multi-metric evaluation
+
+The implementation performs all computation in a side-effect free manner:
+cloning the estimator, applying parameters, fitting on the training fold,
+computing validation (and optional training) metrics, and recording timing
+information. It supports default estimator scoring, user-provided scorer
+callables, and dictionaries of scoring functions for multi-metric evaluation.
+
+The returned dictionary is fully compatible with the downstream aggregation
+utilities used to construct a sklearn-style ``cv_results_`` structure.
+"""
+
+
 # Import libraries, modules, and methods
 
 from time import time

@@ -1,3 +1,23 @@
+"""
+Parallelism configuration utilities for functional machine learning pipelines.
+
+This module provides:
+    - validate_n_jobs: a monadic validator that normalizes and checks the
+      number of worker processes used for parallel execution.
+
+The function follows scikit-learn’s conventions for n_jobs:
+    • n_jobs == -1 → use (CPU count - 1)
+    • n_jobs >= 1  → valid explicit worker count
+    • invalid types or negative values (other than -1) → error
+
+Instead of raising exceptions, validation produces explicit Result values,
+enabling predictable and composable error handling within the functional
+grid search pipeline. This ensures that all multiprocessing components
+receive a valid, well-defined worker count, preventing subtle runtime
+failures and improving reproducibility across platforms.
+"""
+
+
 # Import libraries, modules, and methods
 
 from typing import Any, Tuple

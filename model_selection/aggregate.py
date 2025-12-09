@@ -1,3 +1,19 @@
+"""
+Cross-validation result aggregation utilities.
+
+This module provides:
+    - aggregate_cv_results: construction of a sklearn-style ``cv_results_`` dictionary
+
+The implementation transforms raw fold-level outputs produced by
+``fit_and_score_fn`` into a structured result dictionary consistent
+with scikit-learn’s ``GridSearchCV``. It supports both single-metric
+and multi-metric scoring, includes per-split metrics, computes means
+and standard deviations across folds, and assigns rankings for each
+metric. The resulting structure is fully compatible with downstream
+analysis and model selection procedures.
+"""
+
+
 # Import libraries
 
 import numpy as np

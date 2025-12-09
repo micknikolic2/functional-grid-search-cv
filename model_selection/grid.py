@@ -1,3 +1,20 @@
+"""
+Parameter grid validation and expansion utilities.
+
+This module provides:
+    - is_valid_param_grid: validation of scikit-learn-compatible parameter grids
+    - expand_param_grid: deterministic expansion of grids into explicit
+      hyperparameter combinations
+
+The implementation preserves the user-defined ordering of parameter keys,
+mirroring the behavior of scikit-learn’s ``ParameterGrid``. It ensures that
+all parameter values are valid iterables and that each grid entry conforms
+to scikit-learn conventions. The expanded parameter sequences serve as the
+input to the functional grid search pipeline and guarantee reproducible,
+ordered traversal of hyperparameter configurations.
+"""
+
+
 # Import libraries, modules, and methods
 
 from typing import Union, Mapping, Sequence, Iterable

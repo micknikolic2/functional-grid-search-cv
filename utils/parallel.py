@@ -1,3 +1,32 @@
+"""
+Parallel execution utilities using functional-monadic semantics.
+
+This module provides:
+    - run_parallel: a wrapper around ProcessPoolExecutor that executes
+      independent tasks in parallel and returns their outcomes wrapped
+      in Result objects.
+
+Unlike traditional multiprocessing pipelines that raise exceptions
+mid-execution, this implementation preserves functional transparency:
+
+    • All worker outputs (success or failure) are represented as Result.
+    • Validation of n_jobs is explicit and monadic.
+    • No shared mutable state is used across workers.
+    • Parallelism is deterministic: task arguments are mapped directly
+      to workers, and results are aggregated without side effects.
+
+The abstraction fits naturally within the broader functional Grid Search
+pipeline, enabling:
+    - safe, predictable parallel cross-validation,
+    - structured error propagation,
+    - clean composition with fit_and_score and other pure functions.
+
+The design isolates multiprocessing concerns into a single, testable,
+side-effect-free interface, preserving clarity and reliability across
+the system.
+"""
+
+
 # Import libraries and modules
 
 from concurrent.futures import ProcessPoolExecutor, as_completed

@@ -1,3 +1,21 @@
+"""
+Model complexity scoring and one-standard-error model selection utilities.
+
+This module provides:
+    - default_model_complexity: heuristic complexity measure for parameter sets
+    - select_least_complex_within_1se: selection of a simpler model within
+      one standard error of the best-performing model
+
+The implementation follows the classical 1-SE rule from statistical learning.
+It identifies all models whose mean validation score lies within one standard
+error of the best model and returns the least complex among them. Complexity
+is defined through a user-specified function, allowing flexible notions of
+model parsimony. These utilities support principled model selection and are
+used by the functional grid search pipeline to favor simpler, more stable
+estimators when performance is statistically tied.
+"""
+
+
 # Import libraries, modules, and methods
 
 from typing import Any, Callable, Dict, Optional

@@ -19,8 +19,11 @@ estimators when performance is statistically tied.
 # Import libraries, modules, and methods
 
 from typing import Any, Callable, Dict, Optional
+from functools import reduce
 import numpy as np
 
+def _complexity_contribution():
+    return lambda v: abs(v) if isinstance(v, (int, float)) else 1
 
 def default_model_complexity(params: Dict[str, Any]) -> float:
     """
@@ -31,13 +34,9 @@ def default_model_complexity(params: Dict[str, Any]) -> float:
 
     Lower scores correspond to simpler models.
     """
-    score = 0
-    for k, v in params.items():
-        if isinstance(v, (int, float)):
-            score += abs(v)
-        else:
-            score += 1
-    return score
+    contribution = _complexity_contribution()
+    
+    return reduce(lambda acc, v: acc + contribution(v), params.values(), 0.0
 
 
 def select_least_complex_within_1se(

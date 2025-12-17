@@ -19,6 +19,8 @@ analysis and model selection procedures.
 import numpy as np
 from collections import defaultdict
 
+def _apply(fn):
+    return lambda x: fn(x)
 
 def aggregate_cv_results(scored_results, scoring, return_train_score):
     """
@@ -124,8 +126,8 @@ def aggregate_cv_results(scored_results, scoring, return_train_score):
             splits = grouped[cid]
 
             tv = [d[test_key] for d in splits]
-            mean_test.append(np.mean(tv))
-            std_test.append(np.std(tv))
+            mean_test.append(_apply(np.mean)(tv))
+            std_test.append(_apply(np.std)(tv))
 
             if return_train_score:
                 trv = [d[train_key] for d in splits]

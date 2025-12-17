@@ -22,7 +22,7 @@ Result is used throughout the system to:
 
 # Import libraries
 
-from typing import TypeVar, Callable, Optional
+from typing import TypeVar, Callable, Optional, Union
 from .monad import Monad
 
 T = TypeVar("T")
@@ -44,12 +44,14 @@ class Result(Monad[T]):
         return Result(ok=value)
 
     @staticmethod
-    def Err(error: Exception) -> "Result[T]":
-        return Result(err=error)
+    def Err(error: Union[Exception, str]) -> "Result[T]":
+        if isinstance(error, Exception):
+            return Result(err=error)
+        return Result(err=Exception(error))
 
     def map(self, f: Callable[[T], U]) -> "Result[U]":
         if self.err is not None:
-            return self
+            return Result.Err(self.err)
         try:
             return Result.Ok(f(self.ok))
         except Exception as e:
@@ -57,9 +59,29 @@ class Result(Monad[T]):
 
     def bind(self, f: Callable[[T], "Result[U]"]) -> "Result[U]":
         if self.err is not None:
-            return self
-        return f(self.ok)
+            return Result.Err(self.err)
+        try:
+            return f(self.ok)
+        except Exception as e:
+            return Result.Err(e)
 
     @classmethod
     def unit(cls, value: T) -> "Result[T]":
         return cls.Ok(value)
+
+    def is_ok(self) -> bool:
+        return self.err is None
+
+    def is_err(self) -> bool:
+        return self.err is not None
+
+    def unwrap(self) -> T:
+        if self.err is not None:
+            raise self.err
+        return self.ok
+
+    def error(self) -> Exception:
+        return self.err
+
+    def unwrap_or(self, default: T) -> T:
+        return self.ok if self.err is None else default

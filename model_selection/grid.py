@@ -23,9 +23,6 @@ from monads.result import Result
 
 
 def is_valid_param_grid(param_grid: Union[Mapping, Iterable]) -> bool:
-    """
-    Validate scikit-learn-compatible parameter grid(s).
-    """
     if not isinstance(param_grid, (Mapping, Iterable)):
         return False
 
@@ -46,15 +43,7 @@ def is_valid_param_grid(param_grid: Union[Mapping, Iterable]) -> bool:
 
 def expand_param_grid(
     param_grid: Union[Mapping[str, Sequence], Sequence[Mapping[str, Sequence]]]
-) -> Result[Sequence[dict], str]:
-    """
-    Expand a parameter grid into all possible combinations, respecting the
-    original ordering of parameter keys.
-
-    Unlike naive implementations, parameter keys are not sorted. They retain
-    the exact order provided by the user, which matches scikit-learn’s
-    `ParameterGrid` behavior and yields deterministic parameter sequences.
-    """
+) -> Result[Sequence[dict]]:
     if not is_valid_param_grid(param_grid):
         return Result.Err(
             "Invalid parameter grid: must be dict or list of dicts with non-empty iterable values."
@@ -66,8 +55,8 @@ def expand_param_grid(
     result = []
 
     for grid in param_grid:
-        keys = list(grid.keys())          # order preserved
-        values = [grid[k] for k in keys]  # aligned with original order
+        keys = list(grid.keys())
+        values = [grid[k] for k in keys]
         for combination in product(*values):
             params = dict(zip(keys, combination))
             result.append(params)

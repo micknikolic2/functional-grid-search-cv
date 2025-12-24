@@ -1,40 +1,30 @@
 """
-Result monad for explicit success–failure handling.
+Result monad for explicit success and failure handling (`Either` in Haskell and Scala).
 
-This module provides:
-    - Result: a functional container encoding either a successful outcome
-      (Ok) or an error (Err), without using exceptions for control flow.
+This monad represents values with two possibilities: ok and err (abr. for error). 
+These possibilities are mutually exclusive. 
 
-The Result monad enables functions to return structured success or failure
-states while remaining fully compositional. Instead of raising exceptions
-deep inside the computation, each step returns a Result, allowing errors
-to propagate cleanly through `map` and `bind`. This model makes failure
-paths explicit, predictable, and testable, and replaces mutation-driven
-or exception-driven logic with transparent functional pipelines.
-
-Result is used throughout the system to:
-    - validate estimators and input data,
-    - wrap parallel worker outputs,
-    - propagate errors from parameter-grid expansion,
-    - unify success/error semantics across the entire grid-search pipeline.
+It models a failure with an explanation. The provided explanation is very useful 
+for scenarios such as input validation, IO, distributed and parallel computing. 
+In our solution, it will be mainly used for input validation and parallel computing.
 """
 
-
 # Import libraries
-
 from typing import TypeVar, Callable, Optional, Union
 from .monad import Monad
 
+# Input and output generic data types
 T = TypeVar("T")
 U = TypeVar("U")
 
-
+# Result monad (multilevel inheritance: Maybe <- Monad <- Functor)
 class Result(Monad[T]):
     """
-    Result represents a computation that may succeed (Ok)
+    Result monad models a computation that may succeed (Ok)
     or fail (Err).
-    """
 
+    For more in detail explanation, please check a header comment in this module.
+    """
     def __init__(self, ok: Optional[T] = None, err: Optional[Exception] = None):
         self.ok = ok
         self.err = err
@@ -57,7 +47,7 @@ class Result(Monad[T]):
         except Exception as e:
             return Result.Err(e)
 
-    def bind(self, f: Callable[[T], "Result[U]"]) -> "Result[U]":
+    def bind(self, f: Callable[[T], "Result[U]"]) -> "Result[T]":
         if self.err is not None:
             return Result.Err(self.err)
         try:
@@ -82,6 +72,3 @@ class Result(Monad[T]):
 
     def error(self) -> Exception:
         return self.err
-
-    def unwrap_or(self, default: T) -> T:
-        return self.ok if self.err is None else default

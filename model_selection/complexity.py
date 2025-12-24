@@ -17,7 +17,6 @@ estimators when performance is statistically tied.
 
 
 # Import libraries, modules, and methods
-
 from typing import Any, Callable, Dict, Optional
 from functools import reduce
 import numpy as np
@@ -36,7 +35,7 @@ def default_model_complexity(params: Dict[str, Any]) -> float:
     """
     contribution = _complexity_contribution()
     
-    return reduce(lambda acc, v: acc + contribution(v), params.values(), 0.0
+    return reduce(lambda acc, v: acc + contribution(v), params.values(), 0.0)
 
 
 def select_least_complex_within_1se(
@@ -111,4 +110,78 @@ def select_least_complex_within_1se(
         "params": params_sel,
         "mean_score": mean_sel,
         "complexity": complexity_fn(params_sel),
+    }
+
+
+def select_least_cost_within_1se(
+    cv_results: Dict[str, Any],
+    metric: str = "score",
+    R: float = 1.0,
+    N: float = 1.0,
+    train_time_key: str = "mean_fit_time",
+    infer_time_key: str = "mean_predict_time",
+) -> Optional[Dict[str, Any]]:
+    """
+    Select the least-cost model within one standard error of the best score.
+
+    Cost definition:
+        C_i = R * T_train_i + N * T_infer_i
+
+    Where:
+        T_train_i = cv_results[mean_fit_time][i]
+        T_infer_i = cv_results[mean_predict_time][i]
+
+    This is intended as a principled alternative to parameter-based complexity
+    when you want operational complexity (training+inference) to drive the
+    tie-breaker inside the 1-SE eligible set.
+    """
+
+    key_mean = f"mean_test_{metric}"
+    key_std = f"std_test_{metric}"
+
+    required = [key_mean, key_std, "params", train_time_key, infer_time_key]
+    if any(k not in cv_results for k in required):
+        return None
+
+    means = np.asarray(cv_results[key_mean], dtype=float)
+    stds = np.asarray(cv_results[key_std], dtype=float)
+    train_t = np.asarray(cv_results[train_time_key], dtype=float)
+    infer_t = np.asarray(cv_results[infer_time_key], dtype=float)
+    params_list = cv_results["params"]
+
+    if len(means) == 0:
+        return None
+
+    best_index = int(np.nanargmax(means))
+    best_mean = float(means[best_index])
+    best_std = float(stds[best_index])
+
+    threshold = best_mean - best_std
+
+    eligible = []
+    for i in range(len(means)):
+        m = means[i]
+        if np.isnan(m):
+            continue
+        if m >= threshold:
+            cost = float(R * train_t[i] + N * infer_t[i])
+            eligible.append((i, cost))
+
+    if not eligible:
+        return None
+
+    idx, best_cost = min(eligible, key=lambda t: t[1])
+
+    return {
+        "index": int(idx),
+        "params": params_list[int(idx)],
+        "mean_score": float(means[int(idx)]),
+        "cost": float(best_cost),
+        "R": float(R),
+        "N": float(N),
+        "train_time": float(train_t[int(idx)]),
+        "infer_time": float(infer_t[int(idx)]),
+        "threshold_1se": float(threshold),
+        "best_score": float(best_mean),
+        "best_std": float(best_std),
     }

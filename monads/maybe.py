@@ -1,9 +1,6 @@
 """
-Optional-value monad.
-
-This module provides:
-    - Maybe: a functional container representing computations that may
-      yield a value (Some) or no value (Nothing)
+Maybe monad is an optional-value monad. It controls computation that may 
+yield the value (Some) or no value (Nothing).
 
 The Maybe monad is the functional analogue of nullable values. It removes
 the need for explicit None-checking and supports safe composition through
@@ -15,37 +12,46 @@ Maybe is used throughout the framework for optional computations that do
 not constitute errors but naturally model the presence or absence of data.
 """
 
-
 # Import libraries
-
 from typing import TypeVar, Callable, Optional
 from .monad import Monad
 
+# Input and output generic data types
 T = TypeVar("T")
 U = TypeVar("U")
 
-
+# Maybe monad (multilevel inheritance: Maybe <- Monad <- Functor)
 class Maybe(Monad[T]):
     """
-    Maybe represents an optional value.
-    """
+    Maybe represents an optional value monad.
 
+    For more in detail explanation of the class, please check a header comment in 
+    this module. 
+    """
     def __init__(self, value: Optional[T]):
-        self.value = value
+        self._value = value
+
+    @property 
+    def value(self) -> Optional[T]:
+        return self._value
+
+    @property
+    def is_just(self) -> bool:
+        return self.value is not None
 
     def map(self, f: Callable[[T], U]) -> "Maybe[U]":
-        if self.value is None:
-            return Maybe(None)
-        return Maybe(f(self.value))
+        if self.is_just:
+            return Maybe(f(self.value))
+        return Maybe(None)
+    
+    @property
+    def join(self) -> "Maybe[T]":
+        if self.is_just and isinstance(self.value, Maybe):
+            self.value = self.value.value
 
-    def bind(self, f: Callable[[T], "Maybe[U]"]) -> "Maybe[U]":
-        if self.value is None:
-            return Maybe(None)
-        return f(self.value)
+    def bind(self, f: Callable[[T], "Maybe[U]"]) -> "Maybe[T]":
+        return self.map(f).join
 
     @classmethod
     def unit(cls, value: T) -> "Maybe[T]":
         return cls(value)
-
-    def unwrap_or(self, default: T) -> T:
-        return self.value if self.value is not None else default

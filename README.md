@@ -99,6 +99,14 @@ This yields two estimators:
 
 This principle, used in CART, glmnet, and classical statistical learning, produces models that generalize better and are less likely to overfit.
 
+Model complexity is defined based on model's training time, inference time, estimation of retraining cycles (on a monthly basis) and estimation of number of predictions (on a monthly basis). This can be formalized as follows:
+
+$$
+C = R \cdot T_{\text{train}} + N \cdot T_{\text{infer}}
+$$
+
+where R denotes expected number of retrains in our horizon, Ttrain denotes expected training time per retrain, N denotes expected number of predictions on our horizon while Tinfer denotes expected inference time per prediction.
+
 ---
 
 ### **2.6 Probability Calibration for Classification Models**

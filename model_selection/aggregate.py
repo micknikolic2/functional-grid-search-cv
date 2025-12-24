@@ -75,38 +75,44 @@ def aggregate_cv_results(scored_results, scoring, return_train_score):
 
     n_splits = len(grouped[candidate_ids[0]])
 
-    fit_time = {
-        f"split{i}_fit_time": [] for i in range(n_splits)
-    }
-    score_time = {
-        f"split{i}_score_time": [] for i in range(n_splits)
-    }
+    fit_time = {f"split{i}_fit_time": [] for i in range(n_splits)}
+    predict_time = {f"split{i}_predict_time": [] for i in range(n_splits)}
+    score_time = {f"split{i}_score_time": [] for i in range(n_splits)}
 
     mean_fit = []
     std_fit = []
+    mean_pred = []
+    std_pred = []
     mean_score_t = []
     std_score_t = []
 
     for cid in candidate_ids:
         splits = grouped[cid]
 
-        ft = [d["fit_time"] for d in splits]
-        st = [d["score_time"] for d in splits]
+        ft = [d.get("fit_time", np.nan) for d in splits]
+        pt = [d.get("predict_time", np.nan) for d in splits]
+        st = [d.get("score_time", np.nan) for d in splits]
 
-        mean_fit.append(np.mean(ft))
-        std_fit.append(np.std(ft))
-        mean_score_t.append(np.mean(st))
-        std_score_t.append(np.std(st))
+        mean_fit.append(np.nanmean(ft))
+        std_fit.append(np.nanstd(ft))
+        mean_pred.append(np.nanmean(pt))
+        std_pred.append(np.nanstd(pt))
+        mean_score_t.append(np.nanmean(st))
+        std_score_t.append(np.nanstd(st))
 
         for i, d in enumerate(splits):
-            fit_time[f"split{i}_fit_time"].append(d["fit_time"])
-            score_time[f"split{i}_score_time"].append(d["score_time"])
+            fit_time[f"split{i}_fit_time"].append(d.get("fit_time", np.nan))
+            predict_time[f"split{i}_predict_time"].append(d.get("predict_time", np.nan))
+            score_time[f"split{i}_score_time"].append(d.get("score_time", np.nan))
 
     out.update(fit_time)
+    out.update(predict_time)
     out.update(score_time)
 
     out["mean_fit_time"] = mean_fit
     out["std_fit_time"] = std_fit
+    out["mean_predict_time"] = mean_pred
+    out["std_predict_time"] = std_pred
     out["mean_score_time"] = mean_score_t
     out["std_score_time"] = std_score_t
 
@@ -125,19 +131,19 @@ def aggregate_cv_results(scored_results, scoring, return_train_score):
         for cid in candidate_ids:
             splits = grouped[cid]
 
-            tv = [d[test_key] for d in splits]
-            mean_test.append(_apply(np.mean)(tv))
-            std_test.append(_apply(np.std)(tv))
+            tv = [d.get(test_key, np.nan) for d in splits]
+            mean_test.append(_apply(np.nanmean)(tv))
+            std_test.append(_apply(np.nanstd)(tv))
 
             if return_train_score:
-                trv = [d[train_key] for d in splits]
-                mean_train.append(np.mean(trv))
-                std_train.append(np.std(trv))
+                trv = [d.get(train_key, np.nan) for d in splits]
+                mean_train.append(np.nanmean(trv))
+                std_train.append(np.nanstd(trv))
 
             for i, d in enumerate(splits):
-                split_test[f"split{i}_{test_key}"].append(d[test_key])
+                split_test[f"split{i}_{test_key}"].append(d.get(test_key, np.nan))
                 if return_train_score:
-                    split_train[f"split{i}_{train_key}"].append(d[train_key])
+                    split_train[f"split{i}_{train_key}"].append(d.get(train_key, np.nan))
 
         out.update(split_test)
         if return_train_score:
@@ -150,7 +156,8 @@ def aggregate_cv_results(scored_results, scoring, return_train_score):
             out[f"mean_train_{metric}"] = mean_train
             out[f"std_train_{metric}"] = std_train
 
-        ranks = np.argsort(np.argsort([-m for m in mean_test])) + 1
+        safe_means = [(-np.inf if (m is None or (isinstance(m, float) and np.isnan(m))) else m) for m in mean_test]
+        ranks = np.argsort(np.argsort([-m for m in safe_means])) + 1
         out[f"rank_test_{metric}"] = list(ranks)
 
     return out
